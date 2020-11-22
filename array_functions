@@ -1,0 +1,25 @@
+Option Explicit
+'Module with functions for handling arrays
+'Przemyslaw Furman, 2020
+'przemyslaw.furman@yahoo.com
+
+Function DeleteIndex2DArray(arr As Variant, index As Integer)
+'Function receives a 2 dimensional array, and index indicating which row to delete.
+'Function returns the same array with deleted row.
+    Dim outputArray As Variant, i As Integer, j As Integer
+    ReDim outputArray(LBound(arr) To UBound(arr) - 1, LBound(arr, 2) To UBound(arr, 2))
+    
+    For i = LBound(outputArray) To UBound(outputArray)
+        If i < index Then
+            For j = LBound(arr, 2) To UBound(arr, 2)
+                outputArray(i, j) = arr(i, j)
+            Next j
+        ElseIf i >= index Then
+            For j = LBound(arr, 2) To UBound(arr, 2)
+                outputArray(i, j) = arr(i + 1, j)
+            Next j
+        End If
+    Next i
+    
+    DeleteIndex2DArray = outputArray
+End Function
