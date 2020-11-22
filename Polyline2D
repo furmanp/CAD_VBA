@@ -1,0 +1,218 @@
+'Class created to hanlde Polyline objects while using VBA/Excel to automate some work done with CAD software.
+'Polyline object has most important properties and methods that may be useful while scripting CAD related work.
+'Przemyslaw Furman, 2020
+'przemyslaw.furman@yahoo.com
+'-----------------------------------------------------------------------------------------------------------------------------------------
+Option Explicit
+
+'---------------------------------------------------- Class Properties -------------------------------------------------------------------
+Private cCurveID As Integer
+Private cPlane As String
+Private cClosed As Boolean
+Private cCoordinates As Variant
+Private cMidpoint As Variant
+Private cLength As Double
+'---------------------------------------------------- Class Construcor -------------------------------------------------------------------
+Private Sub Class_Initialize()
+    cCoordinates = Empty
+    cCurveID = 0
+    cPlane = "N/A"
+    cClosed = False
+    cLength = 0
+End Sub
+'---------------------------------------------------- Getters and Setters -------------------------------------------------------------------
+Public Property Let CurveID(ID As Integer)
+    cCurveID = ID
+End Property
+Public Property Get CurveID() As Integer
+    CurveID = cCurveID
+End Property
+Public Property Let Coordinates(Coordinates As Variant)
+    cCoordinates = Coordinates
+    UpdatePolylineProperties
+End Property
+Public Property Get Coordinates() As Variant
+    Coordinates = cCoordinates
+End Property
+Private Property Let Plane(Plane As String)
+    cPlane = Plane
+End Property
+Public Property Get Plane() As String
+    Plane = cPlane
+End Property
+Private Property Let IsClosed(closed As Boolean)
+    cClosed = closed
+End Property
+Public Property Get IsClosed() As Boolean
+    IsClosed = cClosed
+End Property
+Private Property Let Midpoint(Midpoint As Variant)
+    cMidpoint = Midpoint
+End Property
+Public Property Get Midpoint() As Variant
+    Midpoint = cMidpoint
+End Property
+Private Property Let Length(Length As Double)
+    cLength = Round(Length, 3)
+End Property
+Public Property Get Length() As Double
+    Length = cLength
+End Property
+'---------------------------------------------------- Update Subroutine -------------------------------------------------------------------
+Public Sub UpdatePolylineProperties()
+    If IsCoordinateDefined Then
+        Length = GetPolylineLength
+        IsClosed = IsPolylineClosed
+        Plane = GetPolylinePlane
+        Midpoint = GetPolylineMidpoint
+    Else
+        MsgBox "Coordinates not defined"
+    End If
+End Sub
+'---------------------------------------------------- Class methods -------------------------------------------------------------------
+Private Function IsCoordinateDefined() As Boolean
+        On Error Resume Next
+        IsCoordinateDefined = IsArray(cCoordinates) And _
+                           Not IsError(LBound(cCoordinates, 1)) And _
+                           LBound(cCoordinates, 1) <= UBound(cCoordinates, 1)
+End Function
+Private Function IsPolylineClosed() As Boolean
+
+    Dim lastIndex As Integer
+    lastIndex = UBound(cCoordinates, 1)
+
+    If cCoordinates(0, 1) = cCoordinates(lastIndex, 1) And _
+       cCoordinates(0, 2) = cCoordinates(lastIndex, 2) And _
+       cCoordinates(0, 3) = cCoordinates(lastIndex, 3) Then
+        IsPolylineClosed = True
+    Else
+        IsPolylineClosed = False
+    End If
+End Function
+Private Function GetPolylineLength() As Double
+
+    Dim i As Integer
+    Dim Length As Double
+
+    For i = 0 To UBound(cCoordinates, 1) - 1
+        Length = Length + _
+                 Sqr((cCoordinates(i, 1) - cCoordinates(i + 1, 1)) ^ 2 + _
+                     (cCoordinates(i, 2) - cCoordinates(i + 1, 2)) ^ 2 + _
+                     (cCoordinates(i, 3) - cCoordinates(i + 1, 3)) ^ 2)
+    Next i
+    
+    GetPolylineLength = Round(Length, 3)
+End Function
+Private Function GetPolylinePlane() As String
+    Dim x0 As Integer, z0 As Integer, y0 As Integer
+    Dim i As Integer, i_dir As String
+       
+    Dim min_x As Double, max_x As Double
+    Dim min_y As Double, max_y As Double
+    Dim min_z As Double, max_z As Double
+    Dim d_x As Double, d_y As Double, d_z As Double
+    
+    min_x = cCoordinates(0, 1)
+    max_x = cCoordinates(0, 1)
+    min_y = cCoordinates(0, 2)
+    max_y = cCoordinates(0, 2)
+    min_z = cCoordinates(0, 3)
+    max_z = cCoordinates(0, 3)
+
+    For i = 0 To UBound(cCoordinates)
+        x0 = x0 + cCoordinates(i, 1)
+        y0 = y0 + cCoordinates(i, 2)
+        z0 = z0 + cCoordinates(i, 3)
+        
+        If cCoordinates(i, 1) < min_x Then min_x = cCoordinates(i, 1)
+        If cCoordinates(i, 1) > max_x Then max_x = cCoordinates(i, 1)
+        
+        If cCoordinates(i, 2) < min_y Then min_y = cCoordinates(i, 2)
+        If cCoordinates(i, 2) > max_y Then max_y = cCoordinates(i, 2)
+       
+        If cCoordinates(i, 3) < min_z Then min_z = cCoordinates(i, 3)
+        If cCoordinates(i, 3) > max_z Then max_z = cCoordinates(i, 3)
+    Next
+    
+    x0 = x0 / UBound(cCoordinates)
+    y0 = y0 / UBound(cCoordinates)
+    z0 = z0 / UBound(cCoordinates)
+    
+    d_x = max_x - min_x
+    d_y = max_y - min_y
+    d_z = max_z - min_z
+    
+    If d_x < d_y And d_x < d_z Then i_dir = "YZ"
+    If d_y < d_x And d_y < d_z Then i_dir = "XZ"
+    If d_z < d_x And d_z < d_y Then i_dir = "XY"
+    
+    GetPolylinePlane = i_dir
+End Function
+Private Function GetPolylineMidpoint() As Variant
+'Function calculates coordinates of the point at specified length from start of the polyline (percentage value).
+'As an input it takes 2D array of coordinates of 2D polyline
+'Function calculates the closest existing point to specified distance, and then based on equation of a circle calculates precise point
+'Function returns 2 dimensional array of point coordinates (X,Y)
+
+    Dim A_factor As Double, B_factor As Double, C_factor As Double
+    Dim x As Double, y As Double, distance As Double, subtotalLength As Double, offsetVal As Double
+    Dim size As Integer, i As Integer
+    Dim segmentLength() As Double, offsetCoordinates(2) As Double
+    Dim ipVert As Double, ipHor As Double, opCoord As Double
+    size = UBound(cCoordinates, 1)
+    ReDim segmentLength(size)
+    
+    offsetVal = 0.5
+    
+    Select Case GetPolylinePlane
+        Case "XY"
+            ipHor = 1
+            ipVert = 2
+            opCoord = 3
+        Case "XZ"
+            ipHor = 1
+            ipVert = 3
+            opCoord = 2
+        Case "YZ"
+            ipHor = 2
+            ipVert = 3
+            opCoord = 1
+    End Select
+
+    For i = 0 To size - 1
+            segmentLength(i) = Sqr((cCoordinates(i + 1, ipHor) - cCoordinates(i, ipHor)) ^ 2 + (cCoordinates(i + 1, ipVert) - cCoordinates(i, ipVert)) ^ 2)
+    Next i
+    
+    i = 0
+
+    Do Until offsetVal < subtotalLength
+        i = i + 1
+        subtotalLength = subtotalLength + segmentLength(i)
+    Loop
+        A_factor = cCoordinates(i + 1, ipVert) - cCoordinates(i, ipVert)
+        B_factor = cCoordinates(i, ipHor) - cCoordinates(i + 1, ipHor)
+        C_factor = cCoordinates(i + 1, ipHor) * cCoordinates(i, ipVert) - cCoordinates(i, ipHor) * cCoordinates(i + 1, ipVert)
+        distance = offsetVal - (subtotalLength - segmentLength(i))
+        x = cCoordinates(i, ipHor) 'x and y introduced to simplify formula below
+        y = cCoordinates(i, ipVert)
+    
+    If B_factor = 0 Then
+        offsetCoordinates(0) = x
+        offsetCoordinates(1) = y + distance
+    Else
+        offsetCoordinates(0) = -(A_factor * B_factor * y + A_factor * C_factor + B_factor * Sqr(-A_factor * A_factor * x * x - 2 * A_factor * C_factor * x - 2 * A_factor * B_factor * x * y _
+                            + distance * distance * A_factor * A_factor + distance * distance * B_factor * B_factor - B_factor * B_factor * y * y - 2 * B_factor * C_factor * y - C_factor _
+                            * C_factor) - B_factor * B_factor * x) / (A_factor * A_factor + B_factor * B_factor)
+        offsetCoordinates(1) = (-A_factor / B_factor) * offsetCoordinates(0) - (C_factor / B_factor)
+    End If
+    
+        offsetCoordinates(ipHor - 1) = Round(offsetCoordinates(0), 3)
+        offsetCoordinates(ipVert - 1) = Round(offsetCoordinates(1), 3)
+        offsetCoordinates(opCoord - 1) = cCoordinates(0, opCoord)
+    
+    GetPolylineMidpoint = offsetCoordinates
+End Function
+'---------------------------------------------------- Class public methods -------------------------------------------------------------------
+Public Sub ChangePolylineType()
+
+End Sub
